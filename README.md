@@ -74,14 +74,14 @@ Les `entity_id` peuvent être préfixés par le slug du nom de station si vous e
 
 ## Publier ce dépôt sur GitHub et l’ajouter à HACS
 
-1. **Créer un dépôt GitHub** (ex. `birdnet-ha` ou `birdnet-api2ha` si vous regroupez tout).
+1. **Créer un dépôt GitHub** (ex. `birdnet-api2ha-custom_components` ou `birdnet-api2ha` si vous regroupez tout).
 2. **À la racine du dépôt** il doit y avoir :
    - ce `README.md`
    - `hacs.json`
    - le dossier `custom_components/birdnet/` (avec tout son contenu).
-3. **Premier push** (depuis le dossier `birdnet-ha-custom_component`) :
+3. **Premier push** (depuis le dossier `birdnet-api2ha-custom_components`) :
    ```bash
-   cd birdnet-ha-custom_component
+   cd birdnet-api2ha-custom_components
    git init
    git add .
    git commit -m "Initial commit: BirdNET-Go API2HA integration"
@@ -97,7 +97,7 @@ Les `entity_id` peuvent être préfixés par le slug du nom de station si vous e
    Puis sur GitHub : **Releases** → **Create a new release** → choisir le tag `v1.0.0`.
 5. **Ajouter comme dépôt personnalisé HACS** : HACS → Intégrations → ⋮ → Dépôts personnalisés → ajouter l’URL du dépôt (ex. `https://github.com/VOTRE_UTILISATEUR/VOTRE_REPO`).
 
-> **Note** : Si le composant est dans un repo séparé (ex. uniquement `birdnet-ha`), l’URL du dépôt personnalisé HACS est celle de ce repo. Si tout est dans `birdnet-api2ha`, les liens dans le README pointent déjà vers ce repo ; adaptez si besoin.
+> **Note** : Si le composant est dans un repo séparé (ex. `birdnet-api2ha-custom_components`), l’URL du dépôt personnalisé HACS est celle de ce repo. Si tout est dans `birdnet-api2ha`, les liens dans le README pointent déjà vers ce repo ; adaptez si besoin.
 
 ## Licence
 
