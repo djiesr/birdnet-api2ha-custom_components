@@ -1,0 +1,13 @@
+{
+  "domain": "birdnet",
+  "name": "BirdNET-Go API2HA",
+  "version": "1.0.0",
+  "documentation": "https://github.com/djiesr/birdnet-api2ha",
+  "issue_tracker": "https://github.com/djiesr/birdnet-api2ha/issues",
+  "dependencies": [],
+  "codeowners": ["@djiesr"],
+  "requirements": ["aiohttp>=3.8.0"],
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "integration_type": "hub"
+}

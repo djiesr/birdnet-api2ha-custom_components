@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "BirdNET",
+        "description": "Connect to your birdnet-api2ha service (REST API on your Raspberry Pi or server).",
+        "data": {
+          "station_name": "Station name",
+          "host": "Host or IP address",
+          "port": "Port",
+          "update_interval": "Update interval (seconds)",
+          "timeout": "Request timeout (seconds)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the API. Check host, port and that birdnet-api2ha is running.",
+      "unknown": "An unexpected error occurred."
+    }
+  }
+}

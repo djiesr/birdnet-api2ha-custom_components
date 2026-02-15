@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "BirdNET",
+        "description": "Connectez votre service birdnet-api2ha (API REST sur votre Raspberry Pi ou serveur).",
+        "data": {
+          "station_name": "Nom de la station",
+          "host": "Adresse IP ou nom d'hôte",
+          "port": "Port",
+          "update_interval": "Intervalle de mise à jour (secondes)",
+          "timeout": "Délai de requête (secondes)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de se connecter à l'API. Vérifiez l'hôte, le port et que birdnet-api2ha tourne.",
+      "unknown": "Une erreur inattendue s'est produite."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "detections_today": { "name": "Détections aujourd'hui" },
+      "detections_week": { "name": "Détections cette semaine" },
+      "species_today": { "name": "Espèces aujourd'hui" },
+      "species_week": { "name": "Espèces cette semaine" },
+      "last_detection": { "name": "Dernière détection" }
+    }
+  }
+}
