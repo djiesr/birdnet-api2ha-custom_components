@@ -17,5 +17,17 @@
       "cannot_connect": "Cannot connect to the API. Check host, port and that birdnet-api2ha is running.",
       "unknown": "An unexpected error occurred."
     }
+  },
+  "entity": {
+    "sensor": {
+      "system_ip_address": { "name": "IP Address" },
+      "system_response_time": { "name": "Response time" },
+      "system_cpu": { "name": "CPU usage" },
+      "system_memory": { "name": "Memory usage" },
+      "system_disk": { "name": "Disk usage" }
+    },
+    "binary_sensor": {
+      "online": { "name": "Online" }
+    }
   }
 }

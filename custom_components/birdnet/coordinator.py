@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date, timedelta
 from typing import Any
 
@@ -39,6 +40,7 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_detection_id: str | None = None
         self._last_successful_data: dict[str, Any] | None = None
         self._known_species: set[str] = set()
+        self._is_online: bool = False
 
         super().__init__(
             hass,
@@ -55,9 +57,11 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         try:
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-                stats_week, stats_today, detections = await self._fetch_all(session, today)
+                stats_week, stats_today, detections, system_data, response_time_ms = await self._fetch_all(session, today)
+            self._is_online = True
         except Exception as err:
             _LOGGER.warning("API request failed: %s", err)
+            self._is_online = False
             if self._last_successful_data is not None:
                 return self._last_successful_data
             raise UpdateFailed(f"API error: {err}") from err
@@ -95,6 +99,7 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "confidence": conf,
                 "id": str(first.get("id", "")),
                 "audio_url": first.get("audio_url") or "",
+                "image_url": first.get("image_url") or "",
             }
             did = str(first.get("id", ""))
             if self._last_detection_id is not None and did and did != self._last_detection_id:
@@ -132,6 +137,13 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "stats_today": stats_today or [],
             "stats_week": stats_week or [],
             "date_today": today,
+            "system": {
+                "ip_address": system_data.get("ip_address") or "",
+                "cpu_percent": system_data.get("cpu_percent"),
+                "memory_percent": system_data.get("memory_percent"),
+                "disk_percent": system_data.get("disk_percent"),
+                "response_time_ms": response_time_ms,
+            },
         }
         self._last_successful_data = result
         return result
@@ -143,10 +155,11 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "detections_week": 0,
             "species_today": 0,
             "species_week": 0,
-            "last_detection": {"name": "—", "scientific_name": "", "timestamp": "", "confidence": 0, "id": "", "audio_url": ""},
+            "last_detection": {"name": "—", "scientific_name": "", "timestamp": "", "confidence": 0, "id": "", "audio_url": "", "image_url": ""},
             "stats_today": [],
             "stats_week": [],
             "date_today": today,
+            "system": {"ip_address": "", "cpu_percent": None, "memory_percent": None, "disk_percent": None, "response_time_ms": None},
         }
 
     def get_known_species(self) -> set[str]:
@@ -169,8 +182,8 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self,
         session: aiohttp.ClientSession,
         today: str,
-    ) -> tuple[list, list, list]:
-        """Fetch stats and detections in parallel."""
+    ) -> tuple[list, list, list, dict, int]:
+        """Fetch stats, detections and system info in parallel. Returns response time in ms."""
         import asyncio
 
         async def get_json(url: str) -> list:
@@ -184,13 +197,28 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.warning("Fetch %s failed: %s", url, e)
                 return []
 
+        async def get_dict(url: str) -> dict:
+            try:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        return {}
+                    data = await resp.json()
+                    return data if isinstance(data, dict) else {}
+            except Exception as e:
+                _LOGGER.warning("Fetch %s failed: %s", url, e)
+                return {}
+
         stats_week_url = f"{self.base_url}/api/stats?period=week"
         stats_today_url = f"{self.base_url}/api/stats?date_start={today}&date_end={today}"
         detections_url = f"{self.base_url}/api/detections?period=week&limit=1"
+        system_url = f"{self.base_url}/api/system"
 
-        stats_week, stats_today, detections = await asyncio.gather(
+        t_start = time.monotonic()
+        stats_week, stats_today, detections, system_data = await asyncio.gather(
             get_json(stats_week_url),
             get_json(stats_today_url),
             get_json(detections_url),
+            get_dict(system_url),
         )
-        return stats_week, stats_today, detections
+        response_time_ms = round((time.monotonic() - t_start) * 1000)
+        return stats_week, stats_today, detections, system_data, response_time_ms

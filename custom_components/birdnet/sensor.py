@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import re
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import DeviceInfo
 
-from .const import DOMAIN, SENSOR_TYPES, MANUFACTURER, MODEL, CONF_STATION_NAME, DEFAULT_STATION_NAME
+from .const import DOMAIN, SENSOR_TYPES, SYSTEM_SENSOR_TYPES, MANUFACTURER, MODEL, CONF_STATION_NAME, DEFAULT_STATION_NAME
 from .coordinator import BirdNetCoordinator
 
 
@@ -48,7 +48,11 @@ async def async_setup_entry(
         BirdNetSensor(coordinator, sensor_type, config_entry)
         for sensor_type in SENSOR_TYPES
     ]
-    async_add_entities(base_entities)
+    system_entities = [
+        BirdNetSystemSensor(coordinator, sensor_type, config_entry)
+        for sensor_type in SYSTEM_SENSOR_TYPES
+    ]
+    async_add_entities(base_entities + system_entities)
     coordinator.config_entry = config_entry
     coordinator.async_add_entities = async_add_entities
     coordinator._species_sensors_added = set()
@@ -104,6 +108,7 @@ class BirdNetSensor(CoordinatorEntity[BirdNetCoordinator], SensorEntity):
                 "timestamp": last.get("timestamp") or "",
                 "detection_id": last.get("id") or "",
                 "audio_url": last.get("audio_url") or "",
+                "image_url": last.get("image_url") or "",
                 "friendly_name": last.get("name") or "—",
             }
             # Garder toutes les clés pour HA (ex. audio_url pour lire l'audio)
@@ -164,6 +169,39 @@ class BirdNetSpeciesSensor(CoordinatorEntity[BirdNetCoordinator], SensorEntity):
             "species_name": self._species_name,
             "detections_today": count,
         }
+
+
+class BirdNetSystemSensor(CoordinatorEntity[BirdNetCoordinator], SensorEntity):
+    """System metrics sensors: IP, response time, CPU, RAM, disk."""
+
+    def __init__(
+        self,
+        coordinator: BirdNetCoordinator,
+        sensor_type: str,
+        config_entry: ConfigEntry,
+    ) -> None:
+        super().__init__(coordinator)
+        self._sensor_type = sensor_type
+        self._config_entry = config_entry
+        station_slug = _station_slug(config_entry)
+        station_display = (config_entry.data.get(CONF_STATION_NAME) or DEFAULT_STATION_NAME).strip() or DEFAULT_STATION_NAME
+        info = SYSTEM_SENSOR_TYPES[sensor_type]
+        self._data_key = info["data_key"]
+        self._attr_name = info["name"]
+        self._attr_icon = info["icon"]
+        self._attr_native_unit_of_measurement = info.get("unit")
+        self._attr_unique_id = f"{config_entry.entry_id}_system_{sensor_type}"
+        self._attr_suggested_object_id = f"{station_slug}_system_{sensor_type}"
+        self._attr_device_info = _device_info(config_entry.entry_id, station_display)
+        state_class = info.get("state_class")
+        if state_class == "measurement":
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self):
+        if not self.coordinator.data:
+            return None
+        return self.coordinator.data.get("system", {}).get(self._data_key)
 
 
 def _maybe_add_species_sensors(coordinator: BirdNetCoordinator) -> None:

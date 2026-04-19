@@ -24,7 +24,15 @@
       "detections_week": { "name": "Detections this week" },
       "species_today": { "name": "Species today" },
       "species_week": { "name": "Species this week" },
-      "last_detection": { "name": "Last detection" }
+      "last_detection": { "name": "Last detection" },
+      "system_ip_address": { "name": "IP Address" },
+      "system_response_time": { "name": "Response time" },
+      "system_cpu": { "name": "CPU usage" },
+      "system_memory": { "name": "Memory usage" },
+      "system_disk": { "name": "Disk usage" }
+    },
+    "binary_sensor": {
+      "online": { "name": "Online" }
     }
   }
 }

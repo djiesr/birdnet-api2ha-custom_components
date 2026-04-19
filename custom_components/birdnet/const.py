@@ -44,3 +44,41 @@ SENSOR_TYPES = {
         "unit": None,
     },
 }
+
+SYSTEM_SENSOR_TYPES = {
+    "ip_address": {
+        "name": "IP Address",
+        "icon": "mdi:ip-network",
+        "unit": None,
+        "data_key": "ip_address",
+        "state_class": None,
+    },
+    "response_time": {
+        "name": "Response time",
+        "icon": "mdi:timer-outline",
+        "unit": "ms",
+        "data_key": "response_time_ms",
+        "state_class": "measurement",
+    },
+    "cpu": {
+        "name": "CPU usage",
+        "icon": "mdi:cpu-64-bit",
+        "unit": "%",
+        "data_key": "cpu_percent",
+        "state_class": "measurement",
+    },
+    "memory": {
+        "name": "Memory usage",
+        "icon": "mdi:memory",
+        "unit": "%",
+        "data_key": "memory_percent",
+        "state_class": "measurement",
+    },
+    "disk": {
+        "name": "Disk usage",
+        "icon": "mdi:harddisk",
+        "unit": "%",
+        "data_key": "disk_percent",
+        "state_class": "measurement",
+    },
+}
