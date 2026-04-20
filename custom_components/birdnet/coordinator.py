@@ -1,7 +1,8 @@
-"""Data update coordinator for BirdNET (birdnet-api2ha API)."""
+"""Data update coordinators for BirdNET (birdnet-api2ha API)."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from datetime import date, timedelta
@@ -13,8 +14,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import (
     DOMAIN,
-    CONF_TIMEOUT,
     DEFAULT_TIMEOUT,
+    DEFAULT_SYSTEM_UPDATE_INTERVAL,
     EVENT_NEW_DETECTION,
 )
 
@@ -22,7 +23,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Fetch data from birdnet-api2ha REST API. Keeps last good data on API errors."""
+    """Fetch detections/stats from birdnet-api2ha REST API. Keeps last good data on API errors."""
 
     def __init__(
         self,
@@ -32,7 +33,6 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         update_interval: int,
         timeout: int = DEFAULT_TIMEOUT,
     ) -> None:
-        """Initialize."""
         self.host = host.strip()
         self.port = port
         self.timeout = timeout
@@ -57,7 +57,7 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         try:
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-                stats_week, stats_today, detections, system_data, response_time_ms = await self._fetch_all(session, today)
+                stats_week, stats_today, detections = await self._fetch_all(session, today)
             self._is_online = True
         except Exception as err:
             _LOGGER.warning("API request failed: %s", err)
@@ -67,21 +67,11 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"API error: {err}") from err
 
         # If all endpoints returned empty, keep last successful data (avoid flicker to 0)
-        # Always inject fresh system data so CPU/RAM/disk sensors are never stuck at None
-        fresh_system = {
-            "ip_address": system_data.get("ip_address") or "",
-            "cpu_percent": system_data.get("cpu_percent"),
-            "memory_percent": system_data.get("memory_percent"),
-            "disk_percent": system_data.get("disk_percent"),
-            "response_time_ms": response_time_ms,
-        }
         if not stats_week and not stats_today and not detections:
             _LOGGER.debug("All API responses empty, keeping last successful data")
             if self._last_successful_data is not None:
-                return {**self._last_successful_data, "system": fresh_system}
-            data = self._empty_data(today)
-            data["system"] = fresh_system
-            return data
+                return self._last_successful_data
+            return self._empty_data(today)
 
         # Build result
         detections_week = sum(s.get("count", 0) for s in stats_week)
@@ -126,7 +116,7 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if did:
                 self._last_detection_id = did
 
-        # Track known species (from stats_today + stats_week) for per-species sensors
+        # Track known species for per-species sensors
         for s in stats_today or []:
             if isinstance(s, dict):
                 name = (s.get("common_name") or s.get("scientific_name") or "").strip()
@@ -147,19 +137,11 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "stats_today": stats_today or [],
             "stats_week": stats_week or [],
             "date_today": today,
-            "system": {
-                "ip_address": system_data.get("ip_address") or "",
-                "cpu_percent": system_data.get("cpu_percent"),
-                "memory_percent": system_data.get("memory_percent"),
-                "disk_percent": system_data.get("disk_percent"),
-                "response_time_ms": response_time_ms,
-            },
         }
         self._last_successful_data = result
         return result
 
     def _empty_data(self, today: str) -> dict[str, Any]:
-        """Return minimal data when no API data (first run or all empty)."""
         return {
             "detections_today": 0,
             "detections_week": 0,
@@ -169,15 +151,12 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "stats_today": [],
             "stats_week": [],
             "date_today": today,
-            "system": {"ip_address": "", "cpu_percent": None, "memory_percent": None, "disk_percent": None, "response_time_ms": None},
         }
 
     def get_known_species(self) -> set[str]:
-        """Return set of species that have been seen (for per-species sensors)."""
         return set(self._known_species)
 
     def get_count_today_for_species(self, species_name: str) -> int:
-        """Return today's detection count for a species (0 if not in stats_today)."""
         if not self.data or not self.data.get("stats_today"):
             return 0
         for s in self.data["stats_today"]:
@@ -192,9 +171,8 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self,
         session: aiohttp.ClientSession,
         today: str,
-    ) -> tuple[list, list, list, dict, int]:
-        """Fetch stats, detections and system info in parallel. Returns response time in ms."""
-        import asyncio
+    ) -> tuple[list, list, list]:
+        """Fetch stats and detections in parallel."""
 
         async def get_json(url: str) -> list:
             try:
@@ -207,28 +185,58 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.warning("Fetch %s failed: %s", url, e)
                 return []
 
-        async def get_dict(url: str) -> dict:
-            try:
-                async with session.get(url) as resp:
-                    if resp.status != 200:
-                        return {}
-                    data = await resp.json()
-                    return data if isinstance(data, dict) else {}
-            except Exception as e:
-                _LOGGER.warning("Fetch %s failed: %s", url, e)
-                return {}
-
         stats_week_url = f"{self.base_url}/api/stats?period=week"
         stats_today_url = f"{self.base_url}/api/stats?date_start={today}&date_end={today}"
         detections_url = f"{self.base_url}/api/detections?period=week&limit=1"
-        system_url = f"{self.base_url}/api/system"
 
-        t_start = time.monotonic()
-        stats_week, stats_today, detections, system_data = await asyncio.gather(
+        return await asyncio.gather(
             get_json(stats_week_url),
             get_json(stats_today_url),
             get_json(detections_url),
-            get_dict(system_url),
         )
-        response_time_ms = round((time.monotonic() - t_start) * 1000)
-        return stats_week, stats_today, detections, system_data, response_time_ms
+
+
+class BirdNetSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Fetch system metrics from /api/system at a fast independent interval."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        host: str,
+        port: int,
+        update_interval: int = DEFAULT_SYSTEM_UPDATE_INTERVAL,
+        timeout: int = DEFAULT_TIMEOUT,
+    ) -> None:
+        self.base_url = f"http://{host.strip()}:{port}"
+        self.timeout = timeout
+
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN}_system",
+            update_interval=timedelta(seconds=update_interval),
+        )
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        connector = aiohttp.TCPConnector(ssl=False)
+        timeout = aiohttp.ClientTimeout(total=self.timeout)
+        try:
+            async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+                t_start = time.monotonic()
+                async with session.get(f"{self.base_url}/api/system") as resp:
+                    if resp.status != 200:
+                        raise UpdateFailed(f"HTTP {resp.status}")
+                    data = await resp.json()
+                response_time_ms = round((time.monotonic() - t_start) * 1000)
+        except UpdateFailed:
+            raise
+        except Exception as err:
+            raise UpdateFailed(f"System API error: {err}") from err
+
+        return {
+            "ip_address": data.get("ip_address") or "",
+            "cpu_percent": data.get("cpu_percent"),
+            "memory_percent": data.get("memory_percent"),
+            "disk_percent": data.get("disk_percent"),
+            "response_time_ms": response_time_ms,
+        }

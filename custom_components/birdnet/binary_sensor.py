@@ -20,7 +20,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up binary sensors from config entry."""
-    coordinator: BirdNetCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    coordinator: BirdNetCoordinator = hass.data[DOMAIN][config_entry.entry_id]["main"]
     async_add_entities([BirdNetOnlineSensor(coordinator, config_entry)])
 
 

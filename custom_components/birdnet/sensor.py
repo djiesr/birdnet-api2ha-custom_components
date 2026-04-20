@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import DeviceInfo
 
 from .const import DOMAIN, SENSOR_TYPES, SYSTEM_SENSOR_TYPES, MANUFACTURER, MODEL, CONF_STATION_NAME, DEFAULT_STATION_NAME
-from .coordinator import BirdNetCoordinator
+from .coordinator import BirdNetCoordinator, BirdNetSystemCoordinator
 
 
 def _slug(s: str) -> str:
@@ -43,13 +43,15 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up sensors from config entry."""
-    coordinator: BirdNetCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    data = hass.data[DOMAIN][config_entry.entry_id]
+    coordinator: BirdNetCoordinator = data["main"]
+    system_coordinator: BirdNetSystemCoordinator = data["system"]
     base_entities = [
         BirdNetSensor(coordinator, sensor_type, config_entry)
         for sensor_type in SENSOR_TYPES
     ]
     system_entities = [
-        BirdNetSystemSensor(coordinator, sensor_type, config_entry)
+        BirdNetSystemSensor(system_coordinator, sensor_type, config_entry)
         for sensor_type in SYSTEM_SENSOR_TYPES
     ]
     async_add_entities(base_entities + system_entities)
@@ -171,12 +173,12 @@ class BirdNetSpeciesSensor(CoordinatorEntity[BirdNetCoordinator], SensorEntity):
         }
 
 
-class BirdNetSystemSensor(CoordinatorEntity[BirdNetCoordinator], SensorEntity):
-    """System metrics sensors: IP, response time, CPU, RAM, disk."""
+class BirdNetSystemSensor(CoordinatorEntity[BirdNetSystemCoordinator], SensorEntity):
+    """System metrics sensors: IP, response time, CPU, RAM, disk. Updates every 15 s."""
 
     def __init__(
         self,
-        coordinator: BirdNetCoordinator,
+        coordinator: BirdNetSystemCoordinator,
         sensor_type: str,
         config_entry: ConfigEntry,
     ) -> None:
@@ -201,7 +203,7 @@ class BirdNetSystemSensor(CoordinatorEntity[BirdNetCoordinator], SensorEntity):
     def native_value(self):
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.get("system", {}).get(self._data_key)
+        return self.coordinator.data.get(self._data_key)
 
 
 def _maybe_add_species_sensors(coordinator: BirdNetCoordinator) -> None:

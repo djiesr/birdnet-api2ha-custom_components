@@ -11,9 +11,10 @@ from .const import (
     CONF_UPDATE_INTERVAL,
     CONF_TIMEOUT,
     DEFAULT_UPDATE_INTERVAL,
+    DEFAULT_SYSTEM_UPDATE_INTERVAL,
     DEFAULT_TIMEOUT,
 )
-from .coordinator import BirdNetCoordinator
+from .coordinator import BirdNetCoordinator, BirdNetSystemCoordinator
 
 PLATFORMS = ["sensor", "binary_sensor"]
 
@@ -27,8 +28,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     timeout = entry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
 
     coordinator = BirdNetCoordinator(hass, host, port, update_interval, timeout)
+    system_coordinator = BirdNetSystemCoordinator(hass, host, port, DEFAULT_SYSTEM_UPDATE_INTERVAL, timeout)
+
     await coordinator.async_config_entry_first_refresh()
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    await system_coordinator.async_config_entry_first_refresh()
+
+    hass.data[DOMAIN][entry.entry_id] = {
+        "main": coordinator,
+        "system": system_coordinator,
+    }
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
