@@ -67,11 +67,21 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"API error: {err}") from err
 
         # If all endpoints returned empty, keep last successful data (avoid flicker to 0)
+        # Always inject fresh system data so CPU/RAM/disk sensors are never stuck at None
+        fresh_system = {
+            "ip_address": system_data.get("ip_address") or "",
+            "cpu_percent": system_data.get("cpu_percent"),
+            "memory_percent": system_data.get("memory_percent"),
+            "disk_percent": system_data.get("disk_percent"),
+            "response_time_ms": response_time_ms,
+        }
         if not stats_week and not stats_today and not detections:
             _LOGGER.debug("All API responses empty, keeping last successful data")
             if self._last_successful_data is not None:
-                return self._last_successful_data
-            return self._empty_data(today)
+                return {**self._last_successful_data, "system": fresh_system}
+            data = self._empty_data(today)
+            data["system"] = fresh_system
+            return data
 
         # Build result
         detections_week = sum(s.get("count", 0) for s in stats_week)
