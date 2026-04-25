@@ -1,7 +1,7 @@
 {
   "domain": "birdnet",
   "name": "BirdNET-Go API2HA",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "documentation": "https://github.com/djiesr/birdnet-api2ha",
   "issue_tracker": "https://github.com/djiesr/birdnet-api2ha/issues",
   "dependencies": [],

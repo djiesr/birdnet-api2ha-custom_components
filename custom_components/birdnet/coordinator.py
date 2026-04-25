@@ -18,6 +18,7 @@ from .const import (
     DEFAULT_SYSTEM_UPDATE_INTERVAL,
     EVENT_NEW_DETECTION,
 )
+from .species_fr_cache import SpeciesFrCache
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_successful_data: dict[str, Any] | None = None
         self._known_species: set[str] = set()
         self._is_online: bool = False
+        self._fr_lookup_pending: set[str] = set()
 
         super().__init__(
             hass,
@@ -48,6 +50,9 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name=DOMAIN,
             update_interval=timedelta(seconds=update_interval),
         )
+
+        cache_path = hass.config.path(".storage", "birdnet_species_fr.json")
+        self._fr_cache = SpeciesFrCache(cache_path)
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch stats and last detection from API. Keep last good data on empty/error."""
@@ -166,6 +171,41 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if name == species_name:
                 return int(s.get("count") or 0)
         return 0
+
+    def get_species_info(self, species_name: str) -> dict:
+        """Return image_url and scientific_name for a species from stats data."""
+        if not self.data:
+            return {}
+        for dataset in (self.data.get("stats_today") or [], self.data.get("stats_week") or []):
+            for s in dataset:
+                if not isinstance(s, dict):
+                    continue
+                name = (s.get("common_name") or s.get("scientific_name") or "").strip()
+                if name == species_name:
+                    return {
+                        "scientific_name": s.get("scientific_name") or "",
+                        "image_url": s.get("image_url") or "",
+                    }
+        return {}
+
+    def get_french_name(self, scientific_name: str) -> str | None:
+        """Return French common name from cache; schedule a Wikidata lookup if missing."""
+        if not scientific_name:
+            return None
+        cached = self._fr_cache.get(scientific_name)
+        if cached is not None:
+            return cached
+        if scientific_name not in self._fr_lookup_pending:
+            self._fr_lookup_pending.add(scientific_name)
+            self.hass.async_create_task(self._lookup_fr_name(scientific_name))
+        return None
+
+    async def _lookup_fr_name(self, scientific_name: str) -> None:
+        """Fetch French name from Wikidata in background, then refresh listeners."""
+        result = await self._fr_cache.fetch(scientific_name)
+        self._fr_lookup_pending.discard(scientific_name)
+        if result:
+            self.async_update_listeners()
 
     async def _fetch_all(
         self,

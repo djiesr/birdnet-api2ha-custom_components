@@ -167,10 +167,20 @@ class BirdNetSpeciesSensor(CoordinatorEntity[BirdNetCoordinator], SensorEntity):
     def extra_state_attributes(self) -> dict:
         """Return extra attributes."""
         count = self.native_value
-        return {
+        attrs: dict = {
             "species_name": self._species_name,
             "detections_today": count,
         }
+        info = self.coordinator.get_species_info(self._species_name)
+        if info.get("scientific_name"):
+            attrs["scientific_name"] = info["scientific_name"]
+            fr_name = self.coordinator.get_french_name(info["scientific_name"])
+            if fr_name:
+                attrs["nom_francais"] = fr_name
+        if info.get("image_url"):
+            attrs["image_url"] = info["image_url"]
+            attrs["entity_picture"] = info["image_url"]
+        return attrs
 
 
 class BirdNetSystemSensor(CoordinatorEntity[BirdNetSystemCoordinator], SensorEntity):
