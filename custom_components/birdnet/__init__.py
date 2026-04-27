@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
@@ -31,13 +33,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     system_coordinator = BirdNetSystemCoordinator(hass, host, port, DEFAULT_SYSTEM_UPDATE_INTERVAL, timeout)
 
     await coordinator.async_config_entry_first_refresh()
-    await system_coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = {
         "main": coordinator,
         "system": system_coordinator,
     }
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Start system coordinator 30s after main to stagger API calls on the Pi:
+    # 0:00 main refresh, 0:30 system refresh, 1:00 main, 1:30 system, ...
+    async def _delayed_system_start() -> None:
+        await asyncio.sleep(30)
+        await system_coordinator.async_config_entry_first_refresh()
+
+    hass.async_create_task(_delayed_system_start())
     return True
 
 

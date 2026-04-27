@@ -43,6 +43,7 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._known_species: set[str] = set()
         self._is_online: bool = False
         self._fr_lookup_pending: set[str] = set()
+        self._tick = 0  # incremented each coordinator run (base interval = 60s)
 
         super().__init__(
             hass,
@@ -55,14 +56,26 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._fr_cache = SpeciesFrCache(cache_path)
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch stats and last detection from API. Keep last good data on empty/error."""
+        """Fetch data with staggered intervals to reduce Pi load.
+
+        detections  → every tick      (60s  = ~1 min)
+        stats_today → every 5 ticks   (300s = ~5 min)
+        stats_week  → every 60 ticks  (3600s = ~1 h)
+        """
+        self._tick += 1
+        is_first = self._tick == 1
+        fetch_today = is_first or (self._tick % 5 == 0)
+        fetch_week = is_first or (self._tick % 60 == 0)
+        today = date.today().isoformat()
+
         connector = aiohttp.TCPConnector(ssl=False)
         timeout = aiohttp.ClientTimeout(total=self.timeout)
-        today = date.today().isoformat()
 
         try:
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-                stats_week, stats_today, detections = await self._fetch_all(session, today)
+                stats_week_new, stats_today_new, detections = await self._fetch_selective(
+                    session, today, fetch_today=fetch_today, fetch_week=fetch_week
+                )
             self._is_online = True
         except Exception as err:
             _LOGGER.warning("API request failed: %s", err)
@@ -71,8 +84,13 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return self._last_successful_data
             raise UpdateFailed(f"API error: {err}") from err
 
-        # If all endpoints returned empty, keep last successful data (avoid flicker to 0)
-        if not stats_week and not stats_today and not detections:
+        # For endpoints not fetched this tick, reuse cached values
+        prev = self._last_successful_data or {}
+        stats_week = stats_week_new if fetch_week else (prev.get("stats_week") or [])
+        stats_today = stats_today_new if fetch_today else (prev.get("stats_today") or [])
+
+        # If everything is empty and we have prior data, keep it (avoid flicker to 0)
+        if not detections and not stats_today and not stats_week:
             _LOGGER.debug("All API responses empty, keeping last successful data")
             if self._last_successful_data is not None:
                 return self._last_successful_data
@@ -207,12 +225,14 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if result:
             self.async_update_listeners()
 
-    async def _fetch_all(
+    async def _fetch_selective(
         self,
         session: aiohttp.ClientSession,
         today: str,
-    ) -> tuple[list, list, list]:
-        """Fetch stats and detections in parallel."""
+        fetch_today: bool = True,
+        fetch_week: bool = True,
+    ) -> tuple[list | None, list | None, list]:
+        """Fetch only the endpoints needed this tick."""
 
         async def get_json(url: str) -> list:
             try:
@@ -225,15 +245,25 @@ class BirdNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.warning("Fetch %s failed: %s", url, e)
                 return []
 
-        stats_week_url = f"{self.base_url}/api/stats?period=week"
-        stats_today_url = f"{self.base_url}/api/stats?date_start={today}&date_end={today}"
-        detections_url = f"{self.base_url}/api/detections?period=week&limit=1"
+        tasks: list = []
+        if fetch_week:
+            tasks.append(get_json(f"{self.base_url}/api/stats?period=week"))
+        if fetch_today:
+            tasks.append(get_json(f"{self.base_url}/api/stats?date_start={today}&date_end={today}"))
+        tasks.append(get_json(f"{self.base_url}/api/detections?period=week&limit=1"))
 
-        return await asyncio.gather(
-            get_json(stats_week_url),
-            get_json(stats_today_url),
-            get_json(detections_url),
-        )
+        results = await asyncio.gather(*tasks)
+
+        idx = 0
+        stats_week = None
+        stats_today = None
+        if fetch_week:
+            stats_week = results[idx]; idx += 1
+        if fetch_today:
+            stats_today = results[idx]; idx += 1
+        detections = results[idx]
+
+        return stats_week, stats_today, detections
 
 
 class BirdNetSystemCoordinator(DataUpdateCoordinator[dict[str, Any]]):
